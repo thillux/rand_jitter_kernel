@@ -1,14 +1,23 @@
+//! This crate provides an interface to the `jitterentropy_rng` inside the Linux kernel
+
 use rand_core::TryRngCore;
 
-#[derive(Debug, PartialEq, PartialOrd)]
+/// data structure holding state of the rng
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RandJitterKernel {
-    fam_fd: libc::c_int,
     rng_fd: libc::c_int,
 }
 
 impl RandJitterKernel {
     #[allow(dead_code)]
     fn new() -> Result<Self, std::io::Error> {
+        /*
+         * We need to open a socket to declare the algorithm to be used first (fam_fd).
+         * In a next step, we accept on this socket to get a specific instance (rng_fd).
+         * After getting the instance, we can close fam_fd.
+         */
+
+        // close this on every (early) return!
         let fam_fd = unsafe { libc::socket(libc::AF_ALG, libc::SOCK_SEQPACKET, 0) };
         if fam_fd <= 0 {
             return Err(std::io::Error::other(
@@ -32,15 +41,29 @@ impl RandJitterKernel {
             )
         };
         if bind_ret != 0 {
+            unsafe {
+                libc::close(fam_fd);
+            }
             return Err(std::io::Error::other("unable to bind AF_ALG socket"));
         }
 
         let rng_fd = unsafe { libc::accept(fam_fd, std::ptr::null_mut(), std::ptr::null_mut()) };
         if rng_fd <= 0 {
+            unsafe {
+                libc::close(fam_fd);
+            }
             return Err(std::io::Error::other("unable to get rng_fd from kernel"));
         }
 
-        Ok(RandJitterKernel { fam_fd, rng_fd })
+        unsafe { libc::close(fam_fd) };
+
+        Ok(RandJitterKernel { rng_fd })
+    }
+}
+
+impl Default for RandJitterKernel {
+    fn default() -> Self {
+        Self::new().unwrap()
     }
 }
 
@@ -48,10 +71,8 @@ impl Drop for RandJitterKernel {
     fn drop(&mut self) {
         unsafe {
             libc::close(self.rng_fd);
-            libc::close(self.fam_fd);
         }
         self.rng_fd = -1;
-        self.fam_fd = -1;
     }
 }
 
@@ -70,6 +91,13 @@ impl TryRngCore for RandJitterKernel {
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        if self.rng_fd < 0 {
+            return Err(std::io::Error::other(format!(
+                "Cannot get entropy from jitterentropy_rng in kernel with invalid fd {}",
+                self.rng_fd
+            )));
+        }
+
         let size = unsafe {
             libc::read(
                 self.rng_fd,
