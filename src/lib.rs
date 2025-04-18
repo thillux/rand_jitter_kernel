@@ -91,7 +91,11 @@ impl TryRngCore for RandJitterKernel {
 #[cfg(test)]
 mod tests {
     use crate::RandJitterKernel;
+    use rand::Rng;
+    use rand::{RngCore, SeedableRng};
+    use rand_chacha::ChaCha20Rng;
     use rand_core::TryRngCore;
+    use rand_xoshiro::{SplitMix64, Xoshiro256PlusPlus};
 
     #[test]
     fn test_u32() {
@@ -193,6 +197,30 @@ mod tests {
 
         for t in threads {
             let _ = t.join();
+        }
+    }
+
+    #[test]
+    fn test_rngs() {
+        let mut rng = RandJitterKernel::new().unwrap().unwrap_err();
+        let mut chacha_rng = ChaCha20Rng::from_rng(&mut rng);
+
+        for _ in 0..1024 {
+            let _ = chacha_rng.next_u64();
+        }
+
+        for _ in 0..32 {
+            let _: [u8; 32] = rng.random();
+        }
+
+        let mut xoshiro_rng = Xoshiro256PlusPlus::from_rng(&mut rng);
+        for _ in 0..1024 {
+            let _ = xoshiro_rng.next_u64();
+        }
+
+        let mut splitmix_rng = SplitMix64::from_rng(&mut rng);
+        for _ in 0..1024 {
+            let _ = splitmix_rng.next_u64();
         }
     }
 }

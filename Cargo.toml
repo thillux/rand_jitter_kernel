@@ -13,6 +13,11 @@ categories = ["cryptography"]
 rand_core = "0.9.3"
 libc = { version = "0.2.171" }
 
+[dev-dependencies]
+rand = "0.9.0"
+rand_chacha = "0.9.0"
+rand_xoshiro = "0.7.0"
+
 [lints.clippy]
 all = { level = "deny", priority = 0 }
 pedantic = { level = "deny", priority = 0 }
