@@ -90,9 +90,8 @@ impl TryRngCore for RandJitterKernel {
 
 #[cfg(test)]
 mod tests {
-    use rand_core::TryRngCore;
-
     use crate::RandJitterKernel;
+    use rand_core::TryRngCore;
 
     #[test]
     fn test_u32() {
@@ -172,6 +171,28 @@ mod tests {
             let mut rng = RandJitterKernel::new().unwrap();
             let u = rng.try_next_u32().unwrap();
             println!("Got {u}");
+        }
+    }
+
+    #[test]
+    fn test_multi_threading() {
+        let mut threads = vec![];
+        let mut rng = RandJitterKernel::new().unwrap();
+        let _ = rng.try_next_u64().unwrap();
+
+        println!("Got bytes (single threaded)!");
+
+        for _ in 0..6 {
+            threads.push(std::thread::spawn(move || {
+                for _ in 0..1024 {
+                    let mut rng = RandJitterKernel::new().unwrap();
+                    let _ = rng.try_next_u64().unwrap();
+                }
+            }));
+        }
+
+        for t in threads {
+            let _ = t.join();
         }
     }
 }
