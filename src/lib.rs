@@ -23,7 +23,7 @@ impl RandJitterKernel {
 
         // close this on every (early) return!
         let fam_fd = unsafe { libc::socket(libc::AF_ALG, libc::SOCK_SEQPACKET, 0) };
-        if fam_fd <= 0 {
+        if fam_fd < 0 {
             return Err(std::io::Error::other(
                 "unable to create AF_ALG socket for jitterentropy_rng",
             ));
@@ -52,7 +52,7 @@ impl RandJitterKernel {
         }
 
         let rng_fd = unsafe { libc::accept(fam_fd, std::ptr::null_mut(), std::ptr::null_mut()) };
-        if rng_fd <= 0 {
+        if rng_fd < 0 {
             unsafe {
                 libc::close(fam_fd);
             }
