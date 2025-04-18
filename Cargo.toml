@@ -1,0 +1,24 @@
+[package]
+name = "rand_jitter_kernel"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Markus Theil <theil.markus@gmail.com>"]
+repository = "https://github.com/thillux/rand_jitter_kernel"
+description = "provides interface to Linux kernel jitterentropy_rng"
+keywords = ["rand", "random", "rng", "jitterentropy"]
+categories = ["cryptography"]
+
+[dependencies]
+rand_core = "0.9.3"
+libc = { version = "0.2.171" }
+
+[lints.clippy]
+all = { level = "deny", priority = 0 }
+pedantic = { level = "deny", priority = 0 }
+cargo = { level = "deny", priority = 0 }
+cargo-common-metadata = { level = "allow", priority = 1 }
+cast_precision_loss = { level = "allow", priority = 1 }
+missing_safety_doc = { level = "allow", priority = 1 }
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
