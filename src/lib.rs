@@ -2,6 +2,8 @@
 
 use rand_core::TryRngCore;
 
+const MAX_RETURN_CHUNK_SIZE: usize = 128;
+
 /// data structure holding state of the rng
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RandJitterKernel {
@@ -9,8 +11,11 @@ pub struct RandJitterKernel {
 }
 
 impl RandJitterKernel {
-    #[allow(dead_code)]
-    fn new() -> Result<Self, std::io::Error> {
+    /// constructs new RNG instance
+    ///
+    /// # Errors
+    /// For all used errors, a different string reason is returned inside `std::io::Error::other(..)`.
+    pub fn new() -> Result<Self, std::io::Error> {
         /*
          * We need to open a socket to declare the algorithm to be used first (fam_fd).
          * In a next step, we accept on this socket to get a specific instance (rng_fd).
@@ -30,7 +35,8 @@ impl RandJitterKernel {
         }
 
         let mut sock_addr: libc::sockaddr_alg = unsafe { std::mem::zeroed() };
-        sock_addr.salg_family = u16::try_from(libc::AF_ALG).unwrap();
+        sock_addr.salg_family = u16::try_from(libc::AF_ALG)
+            .map_err(|_| std::io::Error::other("unable to convert socket algorithm family"))?;
         let rng_type = "rng";
         let rng_name = "jitterentropy_rng";
 
@@ -41,7 +47,8 @@ impl RandJitterKernel {
             libc::bind(
                 fam_fd,
                 std::ptr::addr_of!(sock_addr).cast::<libc::sockaddr>(),
-                u32::try_from(std::mem::size_of_val(&sock_addr)).unwrap(),
+                u32::try_from(std::mem::size_of_val(&sock_addr))
+                    .map_err(|_| std::io::Error::other("unable to convert size of sock_addr"))?,
             )
         };
         if bind_ret != 0 {
@@ -64,6 +71,43 @@ impl RandJitterKernel {
         unsafe { libc::close(fam_fd) };
 
         Ok(RandJitterKernel { rng_fd })
+    }
+
+    fn try_fill_bytes_max_chunk_size(&mut self, dst: &mut [u8]) -> Result<(), std::io::Error> {
+        if dst.len() > MAX_RETURN_CHUNK_SIZE {
+            return Err(std::io::Error::other(format!(
+                "Cannot return more than {} byte in a single call. Requested: {} byte",
+                MAX_RETURN_CHUNK_SIZE,
+                dst.len()
+            )));
+        }
+
+        if self.rng_fd < 0 {
+            return Err(std::io::Error::other(format!(
+                "Cannot get entropy from jitterentropy_rng in kernel with invalid fd {}",
+                self.rng_fd
+            )));
+        }
+
+        let size = unsafe {
+            libc::read(
+                self.rng_fd,
+                dst.as_mut_ptr().cast::<libc::c_void>(),
+                dst.len(),
+            )
+        };
+
+        if size >= 0
+            && usize::try_from(size)
+                .map_err(|_| std::io::Error::other("unable to convert returned size to usize"))?
+                == dst.len()
+        {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(
+                "Cannot get entropy from jitterentropy_rng in kernel",
+            ))
+        }
     }
 }
 
@@ -98,28 +142,19 @@ impl TryRngCore for RandJitterKernel {
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
-        if self.rng_fd < 0 {
-            return Err(std::io::Error::other(format!(
-                "Cannot get entropy from jitterentropy_rng in kernel with invalid fd {}",
-                self.rng_fd
-            )));
+        let mut idx = 0;
+        while idx < dst.len() {
+            let chunk_size = if idx + MAX_RETURN_CHUNK_SIZE > dst.len() {
+                dst.len() - idx
+            } else {
+                MAX_RETURN_CHUNK_SIZE
+            };
+            self.try_fill_bytes_max_chunk_size(&mut dst[idx..idx + chunk_size])?;
+            idx += chunk_size;
         }
+        assert_eq!(idx, dst.len());
 
-        let size = unsafe {
-            libc::read(
-                self.rng_fd,
-                dst.as_mut_ptr().cast::<libc::c_void>(),
-                dst.len(),
-            )
-        };
-
-        if size >= 0 && usize::try_from(size).unwrap() == dst.len() {
-            Ok(())
-        } else {
-            Err(std::io::Error::other(
-                "Cannot get entropy from jitterentropy_rng in kernel",
-            ))
-        }
+        Ok(())
     }
 }
 
@@ -179,14 +214,10 @@ mod tests {
     fn test_bytes() {
         let mut rng = RandJitterKernel::new().unwrap();
 
-        for buffer_size in 0..=128 {
+        for buffer_size in 0..=256 {
             let mut buffer = vec![0u8; buffer_size];
             assert!(rng.try_fill_bytes(&mut buffer).is_ok());
-        }
-
-        for buffer_size in 129..256 {
-            let mut buffer = vec![0u8; buffer_size];
-            assert!(rng.try_fill_bytes(&mut buffer).is_err());
+            println!("{buffer_size}: {buffer:#04X?}");
         }
     }
 
@@ -194,14 +225,14 @@ mod tests {
     fn test_large_bytes_but_ok() {
         let mut rng = RandJitterKernel::new().unwrap();
         let mut buffer = [0u8; 128];
-        assert!(rng.try_fill_bytes(&mut buffer).is_ok());
+        assert!(rng.try_fill_bytes_max_chunk_size(&mut buffer).is_ok());
     }
 
     #[test]
     fn test_too_large_bytes() {
         let mut rng = RandJitterKernel::new().unwrap();
         let mut buffer = [0u8; 129];
-        assert!(rng.try_fill_bytes(&mut buffer).is_err());
+        assert!(rng.try_fill_bytes_max_chunk_size(&mut buffer).is_err());
     }
 
     #[test]
