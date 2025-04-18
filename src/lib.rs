@@ -17,6 +17,10 @@ impl RandJitterKernel {
          * After getting the instance, we can close fam_fd.
          */
 
+        // AF_ALG with jitterentropy_rng is currently only implemented inside the Linux kernel
+        #[cfg(not(target_os = "linux"))]
+        compile_error!("Only Linux is supported");
+
         // close this on every (early) return!
         let fam_fd = unsafe { libc::socket(libc::AF_ALG, libc::SOCK_SEQPACKET, 0) };
         if fam_fd <= 0 {
@@ -55,6 +59,8 @@ impl RandJitterKernel {
             return Err(std::io::Error::other("unable to get rng_fd from kernel"));
         }
 
+        // as we now got the specific rng_fd instance, we can close the fd announcing the type of algorithm
+        // we are interested in
         unsafe { libc::close(fam_fd) };
 
         Ok(RandJitterKernel { rng_fd })
@@ -69,6 +75,7 @@ impl Default for RandJitterKernel {
 
 impl Drop for RandJitterKernel {
     fn drop(&mut self) {
+        assert!(self.rng_fd >= 0, "rng_fd already closed or never opened?");
         unsafe {
             libc::close(self.rng_fd);
         }
