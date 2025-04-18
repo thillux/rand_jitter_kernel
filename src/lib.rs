@@ -6,6 +6,7 @@ pub struct RandJitterKernel {
 }
 
 impl RandJitterKernel {
+    #[allow(dead_code)]
     fn new() -> Result<Self, std::io::Error> {
         let fam_fd = unsafe { libc::socket(libc::AF_ALG, libc::SOCK_SEQPACKET, 0) };
         if fam_fd <= 0 {
