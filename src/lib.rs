@@ -77,7 +77,7 @@ impl TryRngCore for RandJitterKernel {
             )
         };
 
-        if size > 0 && usize::try_from(size).unwrap() == dst.len() {
+        if size >= 0 && usize::try_from(size).unwrap() == dst.len() {
             Ok(())
         } else {
             Err(std::io::Error::other(
@@ -126,7 +126,7 @@ mod tests {
 
             num_bytes += b.len();
 
-            if (now - start).as_secs() > 5 {
+            if (now - start).as_secs() > 2 {
                 let datarate = f64::from(u32::try_from(num_bytes).unwrap())
                     / (now - start).as_secs_f64()
                     / 1024.0;
@@ -134,5 +134,34 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn test_bytes() {
+        let mut rng = RandJitterKernel::new().unwrap();
+
+        for buffer_size in 0..=128 {
+            let mut buffer = vec![0u8; buffer_size];
+            assert!(rng.try_fill_bytes(&mut buffer).is_ok());
+        }
+
+        for buffer_size in 129..256 {
+            let mut buffer = vec![0u8; buffer_size];
+            assert!(rng.try_fill_bytes(&mut buffer).is_err());
+        }
+    }
+
+    #[test]
+    fn test_large_bytes_but_ok() {
+        let mut rng = RandJitterKernel::new().unwrap();
+        let mut buffer = [0u8; 128];
+        assert!(rng.try_fill_bytes(&mut buffer).is_ok());
+    }
+
+    #[test]
+    fn test_too_large_bytes() {
+        let mut rng = RandJitterKernel::new().unwrap();
+        let mut buffer = [0u8; 129];
+        assert!(rng.try_fill_bytes(&mut buffer).is_err());
     }
 }
