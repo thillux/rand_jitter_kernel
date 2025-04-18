@@ -1,5 +1,6 @@
 use rand_core::TryRngCore;
 
+#[derive(Debug, PartialEq, PartialOrd)]
 pub struct RandJitterKernel {
     fam_fd: libc::c_int,
     rng_fd: libc::c_int,
@@ -163,5 +164,14 @@ mod tests {
         let mut rng = RandJitterKernel::new().unwrap();
         let mut buffer = [0u8; 129];
         assert!(rng.try_fill_bytes(&mut buffer).is_err());
+    }
+
+    #[test]
+    fn test_multi_instantiation() {
+        for _ in 0..256 {
+            let mut rng = RandJitterKernel::new().unwrap();
+            let u = rng.try_next_u32().unwrap();
+            println!("Got {u}");
+        }
     }
 }
